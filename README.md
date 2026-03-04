@@ -1,2 +1,3 @@
 # ft_ping
-42 ft_ping project
+
+cmake -S . -B build && cmake --build build
