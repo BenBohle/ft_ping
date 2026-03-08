@@ -17,16 +17,24 @@ set(FT_PING_PUBLIC_HEADERS
     include/ft_ping/config.h
     include/ft_ping/cli/options.h
     include/ft_ping/core/session.h
+    include/ft_ping/core/ping.h
+    include/ft_ping/icmp/echo_utils.h
     include/ft_ping/icmp/echo.h
+    include/ft_ping/icmp/echo_reply.h
+    include/ft_ping/icmp/echo_request.h
     include/ft_ping/platform/socket.h
     include/ft_ping/platform/system.h
+    include/ft_ping/platform/windows_support.h
     include/ft_ping/utils/logger.h
 )
 
 set(FT_PING_PRIVATE_SOURCES
     src/cli/options.c
     src/core/session.c
-    src/icmp/echo.c
+    src/core/ping.c
+    src/icmp/echo_utils.c
+    src/icmp/echo_reply.c
+    src/icmp/echo_request.c
     src/platform/socket.c
     src/platform/system.c
     src/utils/logger.c

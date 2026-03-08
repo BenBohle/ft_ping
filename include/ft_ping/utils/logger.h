@@ -6,11 +6,6 @@
 
 #include "ft_ping/config.h"
 
-
-#if defined(FT_PING_PLATFORM_WINDOWS)
-#    include <windows.h>
-#endif
-
 /* ANSI color codes */
 #define FT_PING_COLOR_RESET   "\033[0m"
 #define FT_PING_COLOR_RED     "\033[31m"      /* Error */

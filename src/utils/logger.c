@@ -1,4 +1,12 @@
+#if defined(FT_PING_PLATFORM_LINUX)
+    #define _POSIX_C_SOURCE 200112L
+#endif
+
 #include "ft_ping/utils/logger.h"
+
+#if defined(FT_PING_PLATFORM_WINDOWS)
+#   include "ft_ping/platform/windows_support.h"
+#endif
 
 #include <time.h>
 
@@ -109,4 +117,3 @@ void ft_ping_log_message(FtPingLogLevel level, const char *format, ...)
     ft_ping_log_message_v(level, format, args);
     va_end(args);
 }
-
