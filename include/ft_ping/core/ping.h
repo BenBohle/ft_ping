@@ -11,10 +11,12 @@ typedef struct FtPingResult
 {
     bool received;
     bool timeout;
+    bool packet_error;
     size_t payload;
     uint8_t ttl;
     double rtt_ms;      // Round-Trip-Time in ms
     char from[46];
+    char error_text[96];
 } FtPingResult;
 
 // Sends Echo Request, receive Echo Reply, tracks RTT.

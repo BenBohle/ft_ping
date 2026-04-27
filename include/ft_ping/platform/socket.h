@@ -38,6 +38,7 @@ typedef struct FtPingSocketConfig
 
 void ft_ping_socket_init(FtPingSocket *sock);
 bool ft_ping_socket_open(FtPingSocket *sock, const FtPingSocketConfig *config, const char *target, char *error_buffer, size_t error_buffer_size);
+bool ft_ping_socket_set_timeout_ms(FtPingSocket *sock, uint32_t timeout_ms, char *error_buffer, size_t error_buffer_size);
 void ft_ping_socket_close(FtPingSocket *sock);
 bool ft_ping_socket_is_open(const FtPingSocket *sock);
 

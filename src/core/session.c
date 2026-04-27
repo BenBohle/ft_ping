@@ -28,7 +28,6 @@ bool ft_ping_session_prepare(FtPingSession *session, const FtPingOptions *option
     }
 
     session->is_ready = true;
-    ft_ping_log_message(FT_PING_LOG_LEVEL_INFO, "ping session ready for %s", options->target);
     return true;
 }
 

@@ -63,8 +63,6 @@ int main(int argc, char **argv)
         return EXIT_SUCCESS;
     }
 
-    ft_ping_log_set_debug(options.verbose);
-
     signal(SIGINT, signal_handler);
 
     FtPingSession session;
@@ -74,8 +72,6 @@ int main(int argc, char **argv)
         platform_system_shutdown();
         return EXIT_FAILURE;
     }
-
-    ft_ping_log_message(FT_PING_LOG_LEVEL_INFO, "ft_ping ready on %s", platform_system_name());
 
     printf("PING %s: %zu data bytes\n", options.target, options.payload_bytes);
 
@@ -98,6 +94,16 @@ int main(int argc, char **argv)
         if (ping_result.timeout)
         {
             printf("Request timeout for icmp_seq %u\n", seq);
+        }
+        else if (ping_result.packet_error)
+        {
+            if (options.verbose)
+            {
+                printf("From %s icmp_seq=%u %s\n",
+                       ping_result.from,
+                       seq,
+                       ping_result.error_text);
+            }
         }
         else if (ping_result.received)
         {
