@@ -22,6 +22,23 @@ static uint16_t ft_ping_request_identifier(void)
 #endif
 }
 
+static uint32_t ft_ping_remaining_timeout_ms(double deadline_ms)
+{
+    double remaining_ms = deadline_ms - ft_ping_get_time_ms();
+
+    if (remaining_ms <= 0.0)
+    {
+        return 0u;
+    }
+
+    if (remaining_ms < 1.0)
+    {
+        return 1u;
+    }
+
+    return (uint32_t)remaining_ms;
+}
+
 static const char *ft_ping_icmp_error_text(uint8_t type, uint8_t code)
 {
     if (type == 3)
@@ -62,15 +79,37 @@ static const char *ft_ping_icmp_error_text(uint8_t type, uint8_t code)
     return "ICMP error";
 }
 
-static void ft_ping_fill_packet_error(FtPingResult *result, const FtPingEchoReply *reply)
+static void ft_ping_store_packet_error(FtPingResult *result, const FtPingEchoReply *reply)
 {
     result->packet_error = true;
     result->ttl = reply->ttl;
     inet_ntop(AF_INET, &reply->from.sin_addr, result->from, sizeof(result->from));
-    snprintf(result->error_text,
-             sizeof(result->error_text),
-             "%s",
-             ft_ping_icmp_error_text(reply->type, reply->code));
+    snprintf(result->error_text, sizeof(result->error_text), "%s", ft_ping_icmp_error_text(reply->type, reply->code));
+}
+
+static void ft_ping_store_echo_reply(FtPingSession *session,
+                                     FtPingResult *result,
+                                     const FtPingEchoReply *reply,
+                                     double start_time_ms)
+{
+    double end_time_ms = ft_ping_get_time_ms();
+
+    result->received = true;
+    result->payload = reply->payload;
+    result->ttl = reply->ttl;
+    result->rtt_ms = end_time_ms - start_time_ms;
+    inet_ntop(AF_INET, &reply->from.sin_addr, result->from, sizeof(result->from));
+
+    session->stats.packets_received++;
+    session->stats.total_rtt_ms += result->rtt_ms;
+    if (result->rtt_ms < session->stats.min_rtt_ms)
+    {
+        session->stats.min_rtt_ms = result->rtt_ms;
+    }
+    if (result->rtt_ms > session->stats.max_rtt_ms)
+    {
+        session->stats.max_rtt_ms = result->rtt_ms;
+    }
 }
 
 bool ft_ping(FtPingSession *session,
@@ -79,24 +118,23 @@ bool ft_ping(FtPingSession *session,
              char *error_buffer,
              size_t error_buffer_size)
 {
-    FtPingEchoRequestParams params;
-    struct sockaddr_in dest;
-    uint16_t identifier;
-    double start_time;
+    FtPingEchoRequestParams request;
+    struct sockaddr_in destination;
+    uint16_t identifier = ft_ping_request_identifier();
+    double start_time_ms;
     double deadline_ms;
 
     memset(result, 0, sizeof(*result));
 
-    identifier = ft_ping_request_identifier();
-    params.target = session->options.target;
-    params.identifier = identifier;
-    params.sequence = sequence;
-    params.payload_size = session->options.payload_bytes;
+    request.target = session->options.target;
+    request.identifier = identifier;
+    request.sequence = sequence;
+    request.payload_size = session->options.payload_bytes;
 
-    start_time = ft_ping_get_time_ms();
-    deadline_ms = start_time + (double)session->options.timeout_ms;
+    start_time_ms = ft_ping_get_time_ms();
+    deadline_ms = start_time_ms + (double)session->options.timeout_ms;
 
-    if (ft_ping_send_echo_request(&session->socket, &params, &dest, error_buffer, error_buffer_size) < 0)
+    if (ft_ping_send_echo_request(&session->socket, &request, &destination, error_buffer, error_buffer_size) < 0)
     {
         return false;
     }
@@ -106,20 +144,12 @@ bool ft_ping(FtPingSession *session,
     for (;;)
     {
         FtPingEchoReply reply;
-        double now_ms = ft_ping_get_time_ms();
-        double remaining_ms = deadline_ms - now_ms;
-        uint32_t timeout_ms;
+        uint32_t timeout_ms = ft_ping_remaining_timeout_ms(deadline_ms);
 
-        if (remaining_ms <= 0.0)
+        if (timeout_ms == 0u)
         {
             result->timeout = true;
             return true;
-        }
-
-        timeout_ms = (uint32_t)remaining_ms;
-        if (timeout_ms == 0u)
-        {
-            timeout_ms = 1u;
         }
 
         if (!ft_ping_socket_set_timeout_ms(&session->socket, timeout_ms, error_buffer, error_buffer_size))
@@ -145,30 +175,13 @@ bool ft_ping(FtPingSession *session,
 
         if (reply.packet_error)
         {
-            ft_ping_fill_packet_error(result, &reply);
+            ft_ping_store_packet_error(result, &reply);
             return true;
         }
 
         if (reply.received)
         {
-            double end_time = ft_ping_get_time_ms();
-
-            result->received = true;
-            result->payload = reply.payload;
-            result->ttl = reply.ttl;
-            result->rtt_ms = end_time - start_time;
-            inet_ntop(AF_INET, &reply.from.sin_addr, result->from, sizeof(result->from));
-
-            session->stats.packets_received++;
-            session->stats.total_rtt_ms += result->rtt_ms;
-            if (result->rtt_ms < session->stats.min_rtt_ms)
-            {
-                session->stats.min_rtt_ms = result->rtt_ms;
-            }
-            if (result->rtt_ms > session->stats.max_rtt_ms)
-            {
-                session->stats.max_rtt_ms = result->rtt_ms;
-            }
+            ft_ping_store_echo_reply(session, result, &reply, start_time_ms);
             return true;
         }
     }

@@ -22,6 +22,37 @@ static void signal_handler(int signum)
     g_running = false;
 }
 
+static void ft_ping_print_result(const FtPingOptions *options, uint32_t sequence, const FtPingResult *result)
+{
+    if (result->timeout)
+    {
+        printf("Request timeout for icmp_seq %u\n", sequence);
+        return;
+    }
+
+    if (result->packet_error)
+    {
+        if (options->verbose)
+        {
+            printf("From %s icmp_seq=%u %s\n",
+                   result->from,
+                   sequence,
+                   result->error_text);
+        }
+        return;
+    }
+
+    if (result->received)
+    {
+        printf("%zu bytes from %s: icmp_seq=%u ttl=%u time=%.2f ms\n",
+               result->payload,
+               result->from,
+               sequence,
+               result->ttl,
+               result->rtt_ms);
+    }
+}
+
 int main(int argc, char **argv)
 {
     if (!platform_system_init())
@@ -91,29 +122,7 @@ int main(int argc, char **argv)
             break;
         }
 
-        if (ping_result.timeout)
-        {
-            printf("Request timeout for icmp_seq %u\n", seq);
-        }
-        else if (ping_result.packet_error)
-        {
-            if (options.verbose)
-            {
-                printf("From %s icmp_seq=%u %s\n",
-                       ping_result.from,
-                       seq,
-                       ping_result.error_text);
-            }
-        }
-        else if (ping_result.received)
-        {
-            printf("%zu bytes from %s: icmp_seq=%u ttl=%u time=%.2f ms\n",
-                   ping_result.payload,
-                   ping_result.from,
-                   seq,
-                   ping_result.ttl,
-                   ping_result.rtt_ms);
-        }
+        ft_ping_print_result(&options, seq, &ping_result);
 
         if (options.count > 0 && seq >= options.count)
         {

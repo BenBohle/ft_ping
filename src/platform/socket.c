@@ -62,6 +62,20 @@ static bool ft_ping_socket_apply_timeout(FtPingSocket *sock, const FtPingSocketC
     return true;
 }
 
+bool ft_ping_socket_set_timeout_ms(FtPingSocket *sock, uint32_t timeout_ms, char *error_buffer, size_t error_buffer_size)
+{
+    FtPingSocketConfig config = { 0 };
+
+    if (!sock || !ft_ping_socket_is_open(sock))
+    {
+        ft_ping_set_error(error_buffer, error_buffer_size, "socket is not open");
+        return false;
+    }
+
+    config.timeout_ms = timeout_ms;
+    return ft_ping_socket_apply_timeout(sock, &config, error_buffer, error_buffer_size);
+}
+
 bool ft_ping_socket_open(FtPingSocket *sock, const FtPingSocketConfig *config, const char *target, char *error_buffer, size_t error_buffer_size)
 {
     if (!sock)
