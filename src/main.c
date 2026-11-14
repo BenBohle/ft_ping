@@ -1,60 +1,91 @@
 #include "ft_ping.h"
-#include "ft_ping/core/ping.h"
+#include "ft_ping/output/print.h"
 
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <signal.h>
-#include <stdbool.h>
-#include <float.h>
+#include <string.h>
+#include <time.h>
 
 #if defined(FT_PING_PLATFORM_WINDOWS)
 #   include "ft_ping/platform/windows_support.h"
 #else
-#   include <unistd.h>
-#   include <sys/time.h>
+#   include <signal.h>
 #endif
 
-static volatile bool g_running = true;
-
-static void signal_handler(int signum)
+static void ft_ping_on_signal(int signum)
 {
     (void)signum;
-    g_running = false;
+    ft_ping_stop = 1;
 }
 
-static void ft_ping_print_result(const FtPingOptions *options, uint32_t sequence, const FtPingResult *result)
+static void ft_ping_install_stop_handler(void)
 {
-    if (result->timeout)
+#if defined(FT_PING_PLATFORM_WINDOWS)
+    signal(SIGINT, ft_ping_on_signal);
+#else
+    struct sigaction action;
+
+    memset(&action, 0, sizeof(action));
+    action.sa_handler = ft_ping_on_signal;
+    sigaction(SIGINT, &action, NULL);
+#endif
+}
+
+static void ft_ping_sleep_ms(uint32_t duration_ms)
+{
+    if (duration_ms == 0 || ft_ping_stop)
     {
-        printf("Request timeout for icmp_seq %u\n", sequence);
         return;
     }
 
-    if (result->packet_error)
+#if defined(FT_PING_PLATFORM_WINDOWS)
+    while (duration_ms > 0 && !ft_ping_stop)
     {
-        if (options->verbose)
+        DWORD slice = duration_ms > 200u ? 200u : duration_ms;
+        Sleep(slice);
+        duration_ms -= slice;
+    }
+#else
+    struct timespec remaining;
+
+    remaining.tv_sec = (time_t)(duration_ms / 1000u);
+    remaining.tv_nsec = (long)(duration_ms % 1000u) * 1000000L;
+    while (!ft_ping_stop && nanosleep(&remaining, &remaining) < 0)
+    {
+        if (errno != EINTR)
         {
-            printf("From %s icmp_seq=%u %s\n",
-                   result->from,
-                   sequence,
-                   result->error_text);
+            break;
         }
+    }
+#endif
+}
+
+static void ft_ping_wait_interval(const FtPingSession *session, double sent_at_ms)
+{
+    double elapsed_ms;
+
+    if (ft_ping_stop)
+    {
         return;
     }
 
-    if (result->received)
+    elapsed_ms = ft_ping_get_time_ms() - sent_at_ms;
+    if (elapsed_ms < (double)session->options.interval_ms)
     {
-        printf("%zu bytes from %s: icmp_seq=%u ttl=%u time=%.2f ms\n",
-               result->payload,
-               result->from,
-               sequence,
-               result->ttl,
-               result->rtt_ms);
+        ft_ping_sleep_ms((uint32_t)((double)session->options.interval_ms - elapsed_ms));
     }
 }
 
 int main(int argc, char **argv)
 {
+    FtPingOptions options;
+    FtPingCliParseResult parse_result;
+    FtPingSession session;
+    char error_buffer[256];
+    uint16_t sequence;
+    int status;
+
     if (!platform_system_init())
     {
         fprintf(stderr, "Failed to initialize platform backend (%s)\n", platform_system_name());
@@ -62,12 +93,9 @@ int main(int argc, char **argv)
     }
 
     ft_ping_log_init_colors();
-
-    FtPingOptions options;
     ft_ping_options_set_defaults(&options);
-
-    char error_buffer[256] = { 0 };
-    FtPingCliParseResult parse_result = ft_ping_cli_parse(argc, argv, &options, error_buffer, sizeof(error_buffer));
+    error_buffer[0] = '\0';
+    parse_result = ft_ping_cli_parse(argc, argv, &options, error_buffer, sizeof(error_buffer));
 
     if (!parse_result.success)
     {
@@ -94,9 +122,8 @@ int main(int argc, char **argv)
         return EXIT_SUCCESS;
     }
 
-    signal(SIGINT, signal_handler);
+    ft_ping_install_stop_handler();
 
-    FtPingSession session;
     if (!ft_ping_session_prepare(&session, &options, error_buffer, sizeof(error_buffer)))
     {
         fprintf(stderr, "ft_ping: %s\n", error_buffer[0] ? error_buffer : "failed to start session");
@@ -104,65 +131,46 @@ int main(int argc, char **argv)
         return EXIT_FAILURE;
     }
 
-    printf("PING %s: %zu data bytes\n", options.target, options.payload_bytes);
-
-    session.stats.min_rtt_ms = DBL_MAX;
-    uint32_t seq = 0;
-
-    while (g_running)
+    if (!ft_ping_stop)
     {
-        seq++;
+        ft_ping_print_header(&session);
+    }
 
+    sequence = 0;
+    while (!ft_ping_stop)
+    {
         FtPingResult ping_result;
-        error_buffer[0] = '\0';
 
-        if (!ft_ping(&session, (uint16_t)seq, &ping_result, error_buffer, sizeof(error_buffer)))
+        error_buffer[0] = '\0';
+        if (!ft_ping(&session, sequence, &ping_result, error_buffer, sizeof(error_buffer)))
         {
             fprintf(stderr, "ft_ping: %s\n", error_buffer[0] ? error_buffer : "ICMP failed");
             break;
         }
 
-        ft_ping_print_result(&options, seq, &ping_result);
-
-        if (options.count > 0 && seq >= options.count)
+        ft_ping_print_result(&session, sequence, &ping_result);
+        if (ping_result.interrupted)
         {
-            g_running = false;
+            break;
         }
 
-        if (g_running)
+        if (options.count > 0 && session.stats.packets_sent >= options.count)
         {
-#if defined(FT_PING_PLATFORM_WINDOWS)
-            Sleep(options.interval_ms);
-#else
-            usleep(options.interval_ms * 1000);
-#endif
+            break;
         }
+
+        ft_ping_wait_interval(&session, ping_result.sent_at_ms);
+        if (ft_ping_stop)
+        {
+            break;
+        }
+
+        sequence++;
     }
 
-    uint64_t sent = session.stats.packets_sent;
-    uint64_t recv = session.stats.packets_received;
-
-    printf("\nPing statistics for %s:\n", options.target);
-    printf("    Packets: Sent = %llu, Received = %llu, Lost = %llu\n",
-           (unsigned long long)sent,
-           (unsigned long long)recv,
-           (unsigned long long)(sent - recv));
-
-    if (sent > 0)
-    {
-        uint64_t loss_percent = ((sent - recv) * 100) / sent;
-        printf("    (%llu%% loss),\n", (unsigned long long)loss_percent);
-    }
-
-    if (recv > 0)
-    {
-        double avg_rtt = session.stats.total_rtt_ms / recv;
-        printf("Approximate round trip times in milli-seconds:\n");
-        printf("    Minimum = %.2fms, Maximum = %.2fms, Average = %.2fms\n",
-               session.stats.min_rtt_ms, session.stats.max_rtt_ms, avg_rtt);
-    }
-
+    ft_ping_print_stats(&session);
+    status = session.stats.packets_received > 0 ? EXIT_SUCCESS : EXIT_FAILURE;
     ft_ping_session_shutdown(&session);
     platform_system_shutdown();
-    return EXIT_SUCCESS;
+    return status;
 }

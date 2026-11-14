@@ -10,17 +10,9 @@
 #   include "ft_ping/platform/windows_support.h"
 #else
 #   include <arpa/inet.h>
-#   include <unistd.h>
 #endif
 
-static uint16_t ft_ping_request_identifier(void)
-{
-#if defined(FT_PING_PLATFORM_WINDOWS)
-    return (uint16_t)(GetCurrentProcessId() & 0xFFFF);
-#else
-    return (uint16_t)(getpid() & 0xFFFF);
-#endif
-}
+volatile sig_atomic_t ft_ping_stop = 0;
 
 static uint32_t ft_ping_remaining_timeout_ms(double deadline_ms)
 {
@@ -39,52 +31,63 @@ static uint32_t ft_ping_remaining_timeout_ms(double deadline_ms)
     return (uint32_t)remaining_ms;
 }
 
-static const char *ft_ping_icmp_error_text(uint8_t type, uint8_t code)
+static void ft_ping_format_icmp_error(char *buffer, size_t size, uint8_t type, uint8_t code)
 {
+    const char *text = "ICMP error";
+
     if (type == 3)
     {
-        switch (code)
+        if (code == 1)
         {
-            case 0: return "Destination Net Unreachable";
-            case 1: return "Destination Host Unreachable";
-            case 2: return "Destination Protocol Unreachable";
-            case 3: return "Destination Port Unreachable";
-            case 4: return "Fragmentation needed and DF set";
-            case 5: return "Source Route Failed";
-            default: return "Destination Unreachable";
+            text = "Destination Host Unreachable";
+        }
+        else if (code == 0)
+        {
+            text = "Destination Net Unreachable";
+        }
+        else
+        {
+            text = "Destination Unreachable";
         }
     }
-
-    if (type == 11)
+    else if (type == 11)
     {
-        switch (code)
+        if (code == 0)
         {
-            case 0: return "Time to live exceeded";
-            case 1: return "Frag reassembly time exceeded";
-            default: return "Time exceeded";
+            text = "Time to live exceeded";
+        }
+        else
+        {
+            text = "Time exceeded";
         }
     }
-
-    if (type == 12)
+    else if (type == 12)
     {
-        switch (code)
-        {
-            case 0: return "Parameter problem";
-            case 1: return "Missing required option";
-            case 2: return "Bad length";
-            default: return "Parameter problem";
-        }
+        text = "Parameter problem";
     }
 
-    return "ICMP error";
+    snprintf(buffer, size, "%s", text);
 }
 
 static void ft_ping_store_packet_error(FtPingResult *result, const FtPingEchoReply *reply)
 {
     result->packet_error = true;
     result->ttl = reply->ttl;
+    result->payload = reply->payload;
+    result->has_ip_header = reply->has_ip_header;
+    result->ip_header_len = reply->ip_header_len;
+    result->has_quoted_icmp = reply->has_quoted_icmp;
+    result->quoted_type = reply->quoted_type;
+    result->quoted_code = reply->quoted_code;
+    result->quoted_size = reply->quoted_size;
+    result->quoted_id = reply->quoted_id;
+    result->quoted_seq = reply->quoted_seq;
+    if (reply->has_ip_header && reply->ip_header_len > 0)
+    {
+        memcpy(result->ip_header, reply->ip_header, reply->ip_header_len);
+    }
     inet_ntop(AF_INET, &reply->from.sin_addr, result->from, sizeof(result->from));
-    snprintf(result->error_text, sizeof(result->error_text), "%s", ft_ping_icmp_error_text(reply->type, reply->code));
+    ft_ping_format_icmp_error(result->error_text, sizeof(result->error_text), reply->type, reply->code);
 }
 
 static void ft_ping_store_echo_reply(FtPingSession *session,
@@ -102,6 +105,7 @@ static void ft_ping_store_echo_reply(FtPingSession *session,
 
     session->stats.packets_received++;
     session->stats.total_rtt_ms += result->rtt_ms;
+    session->stats.total_rtt_sq_ms += result->rtt_ms * result->rtt_ms;
     if (result->rtt_ms < session->stats.min_rtt_ms)
     {
         session->stats.min_rtt_ms = result->rtt_ms;
@@ -119,22 +123,22 @@ bool ft_ping(FtPingSession *session,
              size_t error_buffer_size)
 {
     FtPingEchoRequestParams request;
-    struct sockaddr_in destination;
-    uint16_t identifier = ft_ping_request_identifier();
     double start_time_ms;
     double deadline_ms;
+    const uint32_t poll_slice_ms = 200u;
 
     memset(result, 0, sizeof(*result));
 
-    request.target = session->options.target;
-    request.identifier = identifier;
+    request.identifier = session->identifier;
     request.sequence = sequence;
     request.payload_size = session->options.payload_bytes;
 
     start_time_ms = ft_ping_get_time_ms();
+    result->sent_at_ms = start_time_ms;
     deadline_ms = start_time_ms + (double)session->options.timeout_ms;
 
-    if (ft_ping_send_echo_request(&session->socket, &request, &destination, error_buffer, error_buffer_size) < 0)
+    if (ft_ping_send_echo_request(&session->socket, &request, &session->destination,
+                                  error_buffer, error_buffer_size) < 0)
     {
         return false;
     }
@@ -144,12 +148,24 @@ bool ft_ping(FtPingSession *session,
     for (;;)
     {
         FtPingEchoReply reply;
-        uint32_t timeout_ms = ft_ping_remaining_timeout_ms(deadline_ms);
+        uint32_t timeout_ms;
 
+        if (ft_ping_stop)
+        {
+            result->interrupted = true;
+            return true;
+        }
+
+        timeout_ms = ft_ping_remaining_timeout_ms(deadline_ms);
         if (timeout_ms == 0u)
         {
             result->timeout = true;
             return true;
+        }
+
+        if (timeout_ms > poll_slice_ms)
+        {
+            timeout_ms = poll_slice_ms;
         }
 
         if (!ft_ping_socket_set_timeout_ms(&session->socket, timeout_ms, error_buffer, error_buffer_size))
@@ -157,18 +173,13 @@ bool ft_ping(FtPingSession *session,
             return false;
         }
 
-        if (!ft_ping_echo_reply(&session->socket, identifier, sequence, &reply, error_buffer, error_buffer_size))
+        if (!ft_ping_echo_reply(&session->socket, session->identifier, sequence, &reply,
+                                error_buffer, error_buffer_size))
         {
             return false;
         }
 
-        if (reply.timeout)
-        {
-            result->timeout = true;
-            return true;
-        }
-
-        if (reply.ignored)
+        if (reply.timeout || reply.ignored)
         {
             continue;
         }

@@ -10,17 +10,16 @@
 
 typedef struct FtPingEchoRequestParams
 {
-    const char *target;
     uint16_t identifier;
     uint16_t sequence;
     size_t payload_size;
 } FtPingEchoRequestParams;
 
-// ICMP Echo Request (Type 8)
-// returnes number of bytes sended, -1 on error.
+// ICMP Echo Request (Type 8). destination is already resolved.
+// Returns the number of bytes sent, or -1 on error.
 int ft_ping_send_echo_request(FtPingSocket *socket,
                               const FtPingEchoRequestParams *params,
-                              struct sockaddr_in *dest_out,
+                              const struct sockaddr_in *destination,
                               char *error_buffer,
                               size_t error_buffer_size);
 

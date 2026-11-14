@@ -10,6 +10,7 @@ typedef struct FtPingOptions
 {
     char target[FT_PING_MAX_HOST_LEN + 1];
     bool verbose;
+    bool windows_output;
     bool show_help;
     bool show_version;
     uint16_t ttl;

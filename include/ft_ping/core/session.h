@@ -11,6 +11,7 @@ typedef struct FtPingStatistics
     double min_rtt_ms;
     double max_rtt_ms;
     double total_rtt_ms;
+    double total_rtt_sq_ms;
 } FtPingStatistics;
 
 typedef struct FtPingSession
@@ -18,6 +19,9 @@ typedef struct FtPingSession
     FtPingOptions options;
     FtPingSocket socket;
     FtPingStatistics stats;
+    struct sockaddr_in destination;
+    char resolved_ip[16];
+    uint16_t identifier;
     bool is_ready;
 } FtPingSession;
 

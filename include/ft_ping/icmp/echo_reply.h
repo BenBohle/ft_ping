@@ -12,15 +12,24 @@
 typedef struct FtPingEchoReply
 {
     bool received;          // true = valid Echo Reply received
-    bool timeout;           // true = timeout, no reply
+    bool timeout;           // true = this wait returned no packet
     bool packet_error;      // true = relevant ICMP error for our request
     bool ignored;           // true = unrelated packet, keep waiting
+    bool has_ip_header;
+    bool has_quoted_icmp;
     uint16_t identifier;
     uint16_t sequence;
     size_t payload;
+    size_t ip_header_len;
+    size_t quoted_size;
+    uint16_t quoted_id;
+    uint16_t quoted_seq;
     uint8_t ttl;
     uint8_t type;
     uint8_t code;
+    uint8_t quoted_type;
+    uint8_t quoted_code;
+    uint8_t ip_header[FT_PING_IP_HEADER_MAX];
     struct sockaddr_in from;
 } FtPingEchoReply;
 

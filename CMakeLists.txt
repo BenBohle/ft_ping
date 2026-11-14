@@ -7,6 +7,10 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_BINARY_DIR}/bin)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_BINARY_DIR}/bin)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO ${CMAKE_BINARY_DIR}/bin)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 
 option(FT_PING_ENABLE_WARNINGS "Enable compiler warnings" ON)
@@ -22,6 +26,7 @@ set(FT_PING_PUBLIC_HEADERS
     include/ft_ping/icmp/echo.h
     include/ft_ping/icmp/echo_reply.h
     include/ft_ping/icmp/echo_request.h
+    include/ft_ping/output/print.h
     include/ft_ping/platform/socket.h
     include/ft_ping/platform/system.h
     include/ft_ping/platform/windows_support.h
@@ -35,6 +40,7 @@ set(FT_PING_PRIVATE_SOURCES
     src/icmp/echo_utils.c
     src/icmp/echo_reply.c
     src/icmp/echo_request.c
+    src/output/print.c
     src/platform/socket.c
     src/platform/system.c
     src/utils/logger.c
@@ -56,9 +62,9 @@ target_compile_definitions(ft_ping_lib
 if (WIN32)
     target_compile_definitions(ft_ping_lib PUBLIC FT_PING_PLATFORM_WINDOWS)
 elseif (APPLE)
-    target_compile_definitions(ft_ping_lib PUBLIC FT_PING_PLATFORM_DARWIN)
+    target_compile_definitions(ft_ping_lib PUBLIC FT_PING_PLATFORM_DARWIN _DARWIN_C_SOURCE)
 else()
-    target_compile_definitions(ft_ping_lib PUBLIC FT_PING_PLATFORM_LINUX)
+    target_compile_definitions(ft_ping_lib PUBLIC FT_PING_PLATFORM_LINUX _DEFAULT_SOURCE)
 endif()
 
 if (FT_PING_ENABLE_WARNINGS)
@@ -87,3 +93,10 @@ endif()
 add_executable(ft_ping src/main.c)
 target_link_libraries(ft_ping PRIVATE ft_ping::lib)
 set_target_properties(ft_ping PROPERTIES OUTPUT_NAME ft_ping)
+if (APPLE)
+    target_compile_definitions(ft_ping PRIVATE _DARWIN_C_SOURCE)
+    target_compile_options(ft_ping PRIVATE -Wall -Wextra -Wpedantic)
+elseif (UNIX)
+    target_compile_definitions(ft_ping PRIVATE _DEFAULT_SOURCE)
+    target_compile_options(ft_ping PRIVATE -Wall -Wextra -Wpedantic)
+endif()

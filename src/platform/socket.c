@@ -94,6 +94,20 @@ bool ft_ping_socket_open(FtPingSocket *sock, const FtPingSocketConfig *config, c
         return false;
     }
     sock->handle = handle;
+#elif defined(FT_PING_PLATFORM_DARWIN)
+    int fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_ICMP);
+    if (fd < 0)
+    {
+        ft_ping_set_error(error_buffer, error_buffer_size, "socket error (%s)", strerror(errno));
+        return false;
+    }
+    sock->fd = fd;
+#   if defined(IP_RECVTTL)
+    {
+        int receive_ttl = 1;
+        (void)setsockopt(fd, IPPROTO_IP, IP_RECVTTL, &receive_ttl, sizeof(receive_ttl));
+    }
+#   endif
 #else
     int fd = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
     if (fd < 0)

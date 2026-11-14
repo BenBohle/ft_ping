@@ -38,6 +38,7 @@
 #define FT_PING_DEFAULT_TIMEOUT_MS 1000u
 #define FT_PING_DEFAULT_INTERVAL_MS 1000u
 #define FT_PING_MAX_HOST_LEN 255u
+#define FT_PING_IP_HEADER_MAX 60u
 
 #define FT_PING_ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]))
 #define FT_PING_UNUSED(value) ((void)(value))

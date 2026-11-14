@@ -66,6 +66,10 @@ FtPingCliParseResult ft_ping_cli_parse(int argc, char **argv, FtPingOptions *opt
         {
             options->timeout_ms = (uint32_t)strtoul(argv[++index], NULL, 10);
         }
+        else if (strcmp(arg, "--windows") == 0)
+        {
+            options->windows_output = true;
+        }
         else if (arg[0] == '-')
         {
             result.success = false;
@@ -99,12 +103,13 @@ void ft_ping_cli_print_usage(FILE *stream)
 
     fprintf(stream,
             "Usage: ft_ping [options] <host>\n"
-            "  -v, --verbose     Show verbose output\n"
+            "  -v, --verbose     Show the id and ICMP error headers\n"
             "  -c <count>        Number of requests (0 = infinite)\n"
             "  -s <bytes>        Payload size in bytes\n"
             "  -i <ms>           Interval in milliseconds\n"
             "  -t <ttl>          Time to live value\n"
             "  -W <ms>           Timeout in milliseconds\n"
+            "      --windows     Windows-style text (default is inetutils-2.0)\n"
             "  -?, --help        Show this help\n"
             "      --version     Show version and exit\n");
 }
