@@ -17,9 +17,15 @@ int ft_ping_send_echo_request(FtPingSocket *socket,
                               char *error_buffer,
                               size_t error_buffer_size)
 {
-    size_t packet_size = sizeof(FtPingIcmpHeader) + params->payload_size;
     uint8_t packet[65535];
+    const size_t max_payload = sizeof(packet) - sizeof(FtPingIcmpHeader);
     FtPingIcmpHeader *icmp;
+    size_t packet_size;
+
+    if (!socket || !params || !error_buffer || error_buffer_size == 0)
+    {
+        return -1;
+    }
 
     if (!destination)
     {
@@ -27,11 +33,13 @@ int ft_ping_send_echo_request(FtPingSocket *socket,
         return -1;
     }
 
-    if (packet_size > sizeof(packet))
+    if (params->payload_size > max_payload)
     {
-        snprintf(error_buffer, error_buffer_size, "Packet too large (%zu bytes)", packet_size);
+        snprintf(error_buffer, error_buffer_size, "Packet too large (%zu bytes)", params->payload_size);
         return -1;
     }
+
+    packet_size = sizeof(FtPingIcmpHeader) + params->payload_size;
 
     memset(packet, 0, packet_size);
 

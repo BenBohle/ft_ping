@@ -1,7 +1,43 @@
 #include "ft_ping/cli/options.h"
 
-#include <string.h>
+#include <errno.h>
+#include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
+
+static bool ft_ping_read_numeric_argument(char **argv, int argc, int *index, uintmax_t maximum,
+                                          unsigned long *value, char *error_buffer, size_t error_buffer_size)
+{
+    const char *option = argv[*index];
+    const char *argument;
+    char *end = NULL;
+    unsigned long parsed;
+
+    if (*index + 1 >= argc || !argv[*index + 1])
+    {
+        ft_ping_set_error(error_buffer, error_buffer_size, "option '%s' requires an argument", option);
+        return false;
+    }
+
+    argument = argv[*index + 1];
+    if (argument[0] == '-')
+    {
+        ft_ping_set_error(error_buffer, error_buffer_size, "invalid argument '%s' for option '%s'", argument, option);
+        return false;
+    }
+
+    errno = 0;
+    parsed = strtoul(argument, &end, 10);
+    if (end == argument || *end != '\0' || errno == ERANGE || (uintmax_t)parsed > maximum)
+    {
+        ft_ping_set_error(error_buffer, error_buffer_size, "invalid argument '%s' for option '%s'", argument, option);
+        return false;
+    }
+
+    *index += 1;
+    *value = parsed;
+    return true;
+}
 
 void ft_ping_options_set_defaults(FtPingOptions *options)
 {
@@ -46,25 +82,65 @@ FtPingCliParseResult ft_ping_cli_parse(int argc, char **argv, FtPingOptions *opt
             result.should_exit = true;
             break;
         }
-        else if (strcmp(arg, "-c") == 0 && (index + 1) < argc)
+        else if (strcmp(arg, "-c") == 0)
         {
-            options->count = (uint32_t)strtoul(argv[++index], NULL, 10);
+            unsigned long value;
+
+            if (!ft_ping_read_numeric_argument(argv, argc, &index, UINT32_MAX, &value, error_buffer, error_buffer_size))
+            {
+                result.success = false;
+                result.exit_code = EXIT_FAILURE;
+                break;
+            }
+            options->count = (uint32_t)value;
         }
-        else if (strcmp(arg, "-s") == 0 && (index + 1) < argc)
+        else if (strcmp(arg, "-s") == 0)
         {
-            options->payload_bytes = (size_t)strtoul(argv[++index], NULL, 10);
+            unsigned long value;
+
+            if (!ft_ping_read_numeric_argument(argv, argc, &index, SIZE_MAX, &value, error_buffer, error_buffer_size))
+            {
+                result.success = false;
+                result.exit_code = EXIT_FAILURE;
+                break;
+            }
+            options->payload_bytes = (size_t)value;
         }
-        else if (strcmp(arg, "-i") == 0 && (index + 1) < argc)
+        else if (strcmp(arg, "-i") == 0)
         {
-            options->interval_ms = (uint32_t)strtoul(argv[++index], NULL, 10);
+            unsigned long value;
+
+            if (!ft_ping_read_numeric_argument(argv, argc, &index, UINT32_MAX, &value, error_buffer, error_buffer_size))
+            {
+                result.success = false;
+                result.exit_code = EXIT_FAILURE;
+                break;
+            }
+            options->interval_ms = (uint32_t)value;
         }
-        else if (strcmp(arg, "-t") == 0 && (index + 1) < argc)
+        else if (strcmp(arg, "-t") == 0)
         {
-            options->ttl = (uint16_t)strtoul(argv[++index], NULL, 10);
+            unsigned long value;
+
+            if (!ft_ping_read_numeric_argument(argv, argc, &index, UINT16_MAX, &value, error_buffer, error_buffer_size))
+            {
+                result.success = false;
+                result.exit_code = EXIT_FAILURE;
+                break;
+            }
+            options->ttl = (uint16_t)value;
         }
-        else if (strcmp(arg, "-W") == 0 && (index + 1) < argc)
+        else if (strcmp(arg, "-W") == 0)
         {
-            options->timeout_ms = (uint32_t)strtoul(argv[++index], NULL, 10);
+            unsigned long value;
+
+            if (!ft_ping_read_numeric_argument(argv, argc, &index, UINT32_MAX, &value, error_buffer, error_buffer_size))
+            {
+                result.success = false;
+                result.exit_code = EXIT_FAILURE;
+                break;
+            }
+            options->timeout_ms = (uint32_t)value;
         }
         else if (strcmp(arg, "--windows") == 0)
         {
@@ -74,17 +150,26 @@ FtPingCliParseResult ft_ping_cli_parse(int argc, char **argv, FtPingOptions *opt
         {
             result.success = false;
             result.exit_code = EXIT_FAILURE;
-            ft_ping_set_error(error_buffer, error_buffer_size, "unknown option provided");
+            ft_ping_set_error(error_buffer, error_buffer_size, "unknown option '%s' provided", arg);
             break;
         }
         else
         {
+            if (options->target[0] || strlen(arg) > FT_PING_MAX_HOST_LEN)
+            {
+                result.success = false;
+                result.exit_code = EXIT_FAILURE;
+                ft_ping_set_error(error_buffer, error_buffer_size,
+                                  options->target[0] ? "multiple target hosts provided"
+                                                     : "target host name too long");
+                break;
+            }
             strncpy(options->target, arg, FT_PING_MAX_HOST_LEN);
             options->target[FT_PING_MAX_HOST_LEN] = '\0';
         }
     }
 
-    if (!result.should_exit && !options->target[0])
+    if (result.success && !result.should_exit && !options->target[0])
     {
         result.success = false;
         result.exit_code = EXIT_FAILURE;

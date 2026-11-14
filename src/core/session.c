@@ -1,7 +1,6 @@
 #include "ft_ping/core/session.h"
 
 #include <float.h>
-#include <stdio.h>
 #include <string.h>
 
 #if defined(FT_PING_PLATFORM_WINDOWS)
@@ -28,8 +27,8 @@ static bool ft_ping_resolve_target(FtPingSession *session, char *error_buffer, s
     status = getaddrinfo(session->options.target, NULL, &hints, &info);
     if (status != 0)
     {
-        snprintf(error_buffer, error_buffer_size, "unknown host %s (%s)",
-                 session->options.target, gai_strerror(status));
+        ft_ping_set_error(error_buffer, error_buffer_size, "unknown host %s (%s)",
+                          session->options.target, gai_strerror(status));
         return false;
     }
 
@@ -42,7 +41,7 @@ static bool ft_ping_resolve_target(FtPingSession *session, char *error_buffer, s
     if (!entry || !entry->ai_addr || entry->ai_addrlen < sizeof(struct sockaddr_in))
     {
         freeaddrinfo(info);
-        snprintf(error_buffer, error_buffer_size, "unknown host %s", session->options.target);
+        ft_ping_set_error(error_buffer, error_buffer_size, "unknown host %s", session->options.target);
         return false;
     }
 
@@ -52,7 +51,7 @@ static bool ft_ping_resolve_target(FtPingSession *session, char *error_buffer, s
     if (!inet_ntop(AF_INET, &session->destination.sin_addr,
                    session->resolved_ip, sizeof(session->resolved_ip)))
     {
-        snprintf(error_buffer, error_buffer_size, "unknown host %s", session->options.target);
+        ft_ping_set_error(error_buffer, error_buffer_size, "unknown host %s", session->options.target);
         return false;
     }
 
